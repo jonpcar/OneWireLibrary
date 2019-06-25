@@ -2,6 +2,11 @@
 
 Particle Verison of OneWire Libary
 
+John Carrieres  6/25/2019
+Suggested changes to fix particle.io implementation of interrupt blockout for bit transmissions/receptions 
+and reset.   Interrupt Disable/Enable are replaced by ATOMIC_BLOCKS, this seems to fix all particle.io 
+devices EXCEPT those that have MESH ENABLED
+
 Hotaman 2/1/2016
 Bit and Byte write functions have been changed to only drive the bus high at the end of a byte when requested.
 They no longer drive the bus for High bits when outputting to avoid a holy war.
@@ -178,16 +183,14 @@ uint8_t OneWire::reset(void)
 
     interrupts();
     delayMicroseconds(480);
-    noInterrupts();
+    ATOMIC_BLOCK(){                 //JC put in ATOMIC BLOCK
 
-    pinModeFastInput();    // allow it to float
+        pinModeFastInput();    // allow it to float
 
-    delayMicroseconds(70);
+        delayMicroseconds(70);  
 
-    r =! digitalReadFast();
-
-    interrupts();
-
+        r =! digitalReadFast();
+    }                               //JC END Atomic Block
     delayMicroseconds(410);
 
     return r;
@@ -196,31 +199,29 @@ uint8_t OneWire::reset(void)
 void OneWire::write_bit(uint8_t v)
 {
     if (v & 1) {
-        noInterrupts();
+        ATOMIC_BLOCK(){                 //JC put in ATOMIC BLOCK
 
-        digitalWriteFastLow();
-        pinModeFastOutput();   // drive output low
+            digitalWriteFastLow();
+            pinModeFastOutput();   // drive output low
 
-        delayMicroseconds(10);
+            delayMicroseconds(1);       //JC 10 -> 1
 
-        pinModeFastInput();    // float high
+            pinModeFastInput();    // float high
+        }                               //JC END Atomic Block
 
-        interrupts();
-
-        delayMicroseconds(55);
+        delayMicroseconds(59);          //JC 55 -> 59 (spec 60 = 1+59)
     } else {
-        noInterrupts();
+        ATOMIC_BLOCK(){                 //JC put in ATOMIC BLOCK
 
-        digitalWriteFastLow();
-        pinModeFastOutput();   // drive output low
+            digitalWriteFastLow();
+            pinModeFastOutput();   // drive output low
 
-        delayMicroseconds(65);
+            delayMicroseconds(65);      //JC 65 -> 60 (spec 60)
 
-        pinModeFastInput();    // float high
-
-        interrupts();
-
-        delayMicroseconds(5);
+            pinModeFastInput();    // float high
+        }                               //JC END ATOMIC BLOCK
+ 
+        delayMicroseconds(5);           //JC Leave it...but note it requires RC time constant rise
     }
 }
 
@@ -232,21 +233,19 @@ uint8_t OneWire::read_bit(void)
 {
     uint8_t r;
 
-    noInterrupts();
+    ATOMIC_BLOCK(){                 //JC put in ATTOMIC BLOCK
+        digitalWriteFastLow();
+        pinModeFastOutput();
 
-    digitalWriteFastLow();
-    pinModeFastOutput();
+        delayMicroseconds(1);       //JC 3 -> 1
 
-    delayMicroseconds(3);
+        pinModeFastInput();    // let pin float, pull up will raise
 
-    pinModeFastInput();    // let pin float, pull up will raise
+        delayMicroseconds(13);      //JC 10 -> 13 (spec 15 max, read at ~14 = 1 + 13)
 
-    delayMicroseconds(10);
-
-    r = digitalReadFast();
-
-    interrupts();
-    delayMicroseconds(53);
+        r = digitalReadFast();
+    }                               //JC END Atomic Block
+    delayMicroseconds(46);          //JC 53 -> 46 (spec 60 = 1 + 13 + 46)
 
     return r;
 }
